@@ -34,12 +34,19 @@ sed -i "${LN}a %patch -P1000 -p1" "$SPEC"
 grep -q '^Epoch:[[:space:]]*3$' "$SPEC"
 sed -i 's/^Epoch:\([[:space:]]*\)3$/Epoch:\14/' "$SPEC"
 
-# 4. Release suffix
+# 4. Release suffix (capture the distro release first for the compat Provides)
+ORIG_REL=$(grep -m1 '^Release:' "$SPEC" | sed 's/^Release:[[:space:]]*//')
+[ -n "$ORIG_REL" ]
 sed -i 's/^\(Release:[[:space:]]*.*\)$/\1.dcs1/' "$SPEC"
 
 # 5. loosen ONLY the first (client subpackage) -common dep, epoch pinned to distro's 3
 sed -i '0,/^Requires:\([[:space:]]*\)%{pkgname}-common = %{sameevr}$/s//Requires:\1%{pkgname}-common >= 3:%{version}/' "$SPEC"
 grep -q 'common >= 3:%{version}' "$SPEC"
+
+# 5b. compat Provides at the distro's exact epoch-3 EVR: mariadb-server (and
+# friends) require the client at exact EVR, which epoch 4 would otherwise break
+sed -i '0,/^Requires:\([[:space:]]*\)%{pkgname}-common >= 3:%{version}$/s//&\nProvides:         %{pkgname} = 3:%{version}-'"$ORIG_REL"'\nProvides:         %{pkgname}%{?_isa} = 3:%{version}-'"$ORIG_REL"'/' "$SPEC"
+grep -qF 'Provides:         %{pkgname}%{?_isa} = 3:%{version}-'"$ORIG_REL" "$SPEC"
 
 # 6. changelog
 VER=$(grep -m1 -E '^%(define|global)[[:space:]]+package_version' "$SPEC" | awk '{print $3}')
