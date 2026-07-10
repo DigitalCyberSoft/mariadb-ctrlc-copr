@@ -1,0 +1,38 @@
+name: track-fedora-mariadb
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    container: registry.fedoraproject.org/fedora:latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - releasever: "43"
+            chroots: fedora-43-x86_64 fedora-43-aarch64
+          - releasever: "44"
+            chroots: fedora-44-x86_64 fedora-44-aarch64
+          - releasever: "rawhide"
+            chroots: fedora-rawhide-x86_64 fedora-rawhide-aarch64
+    steps:
+      - name: Install tooling
+        run: dnf -y install git copr-cli rpm-build rpmdevtools dnf5-plugins jq
+
+      - uses: actions/checkout@v4
+
+      - name: Configure copr-cli
+        env:
+          COPR_CONFIG: ${{ secrets.COPR_CONFIG }}
+        run: |
+          mkdir -p ~/.config
+          printf '%s\n' "$COPR_CONFIG" > ~/.config/copr
+
+      - name: Check and rebuild for Fedora ${{ matrix.releasever }}
+        run: ./check-and-build.sh ${{ matrix.releasever }} ${{ matrix.chroots }}

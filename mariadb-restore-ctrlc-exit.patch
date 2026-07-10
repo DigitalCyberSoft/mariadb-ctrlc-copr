@@ -1,0 +1,36 @@
+--- a/client/mysql.cc
++++ b/client/mysql.cc
+@@ -1657,30 +1657,15 @@
+   This function handles sigint calls
+   If query is in process, kill query
+   If 'source' is executed, abort source command
+-  no query in process, regenerate prompt.
++  no query in process, terminate like previous behavior
+ */
+ sig_handler handle_sigint(int sig)
+ {
+-  /*
+-     On Unix only, if no query is being executed just clear the prompt,
+-     don't exit. On Windows we exit.
+-  */
+-  if (!executing_query)
++  /* terminate if no query being executed, or we already tried interrupting */
++  if (!executing_query || (interrupted_query == 2))
+   {
+-#ifndef _WIN32
+-    tee_fprintf(stdout, "^C\n");
+-#ifdef USE_LIBEDIT_INTERFACE
+-    /* Libedit will regenerate it outside of the signal handler. */
+-    sigint_received= 1;
+-#else
+-    rl_on_new_line();           // Regenerate the prompt on a newline
+-    rl_replace_line("", 0);     // Clear the previous text
+-    rl_redisplay();
+-#endif
+-#else // WIN32
+     tee_fprintf(stdout, "Ctrl-C -- exit!\n");
+     end_in_sig_handler(sig);
+-#endif
+     return;
+   }
+ 
