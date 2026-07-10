@@ -1,39 +1,40 @@
 # mariadb-ctrlc-copr
 
-Automation for the [reversejames/mariadb-ctrlc-exit](https://copr.fedorainfracloud.org/coprs/reversejames/mariadb-ctrlc-exit/) COPR project: Fedora MariaDB packages with the pre-10.11.7 Ctrl-C behavior restored in the command-line client.
+Source for the [reversejames/mariadb-ctrlc-exit](https://copr.fedorainfracloud.org/coprs/reversejames/mariadb-ctrlc-exit/) COPR: a MariaDB command-line client with the pre-10.11.7 Ctrl-C behavior restored, delivered as a PATH shadow instead of a distro-package replacement.
 
-## What the patch does
+## What it does
 
-MariaDB 10.11.7 ([MDEV-14448](https://jira.mariadb.org/browse/MDEV-14448)) changed the client so Ctrl-C no longer exits at an idle prompt. `mariadb-restore-ctrlc-exit.patch` restores the previous `handle_sigint` behavior in `client/mysql.cc`:
+MariaDB 10.11.7 ([MDEV-14448](https://jira.mariadb.org/browse/MDEV-14448)) made the client stop exiting on Ctrl-C. `mariadb-restore-ctrlc-exit.patch` reverts `handle_sigint` in `client/mysql.cc`:
 
 - Ctrl-C at an idle prompt exits the client.
 - Ctrl-C during a query kills the query (`KILL QUERY`, then `KILL CONNECTION`).
 - Repeated Ctrl-C exits.
 
-## Packaging changes
+## How it wins over the distro client
 
-`make-patched-srpm.sh` rebuilds a Fedora mariadb srpm with:
+`mariadb-ctrlc.spec` builds only the client (`-DWITHOUT_SERVER=ON`) from the upstream tarball and installs the single binary as **`/usr/local/bin/mysql`**. `/usr/local/bin` precedes `/usr/bin` in the default PATH, so every interactive shell and PATH-resolving script gets the patched client, while:
 
-- the patch above, added as `Patch1000`;
-- `Epoch` bumped 3 to 4, so these packages always sort ahead of distro updates;
-- `Release` suffixed `.dcs1`;
-- the client subpackage's `mariadb-common` requirement loosened to `>= 3:%{version}` so the distro's server, common, and errmsg packages stay installed unmodified.
+- no distribution-owned file is touched (`rpm -V` stays clean for all mariadb packages),
+- distro updates can never overwrite it (packages do not install into `/usr/local`),
+- the `mariadb` command and anything hardcoding `/usr/bin/mysql` intentionally keep stock behavior,
+- no epoch games, no `includepkgs`, no version tracking against Fedora's mariadb.
 
-Only the `mariadb` client package is meant to be installed from the COPR. Use `includepkgs`:
+The client version is pinned in the spec and is independent of the server packages on the host; MySQL/MariaDB clients routinely talk to servers of other versions. Bump `Version:` in the spec and push to rebuild against a newer upstream.
 
-```ini
-# in /etc/yum.repos.d/_copr:copr.fedorainfracloud.org:reversejames:mariadb-ctrlc-exit.repo
-includepkgs=mariadb
+## Install
+
+```sh
+dnf copr enable reversejames/mariadb-ctrlc-exit
+dnf install mariadb-ctrlc
+hash -r   # existing shells may have hashed /usr/bin/mysql
 ```
+
+Caveat to check once per host: `sudo mysql` follows sudoers `secure_path`, which must include `/usr/local/bin` for the shadow to apply under sudo.
 
 ## Automation
 
-`.github/workflows/rebuild.yml` runs daily and on dispatch. For each target release (43, 44, rawhide) it queries the release's default mariadb source package, compares against the newest COPR build for that package name, and when the distro is newer, downloads the srpm, applies the packaging changes, and submits builds to the matching chroots. A new upstream stream (for example `mariadb12`) is detected automatically from the source package name.
+The workflow builds the srpm (downloading the upstream tarball via `spectool`) and submits it to the COPR chroots on every push that touches the spec, the patch, or the workflow, plus manual dispatch. It requires the `COPR_CONFIG` repository secret (a copr-cli config file; token from <https://copr.fedorainfracloud.org/api/>).
 
-Requires the repository secret `COPR_CONFIG` containing a copr-cli config file (token from <https://copr.fedorainfracloud.org/api/>).
+## History
 
-## Known failure modes
-
-- Fedora branches a new release: add a matrix entry with the new releasever and chroots. COPR's `follow_fedora_branching` copies the last builds into new chroots in the meantime.
-- Fedora itself bumps mariadb's `Epoch` to 4: `make-patched-srpm.sh` aborts by design (it verifies the distro epoch is still 3). Bump the script's epoch handling to 5 and rebuild.
-- The build epoch means dnf prefers this repo's client even when the distro version is newer; if the automation stops running, the client stays at the last built version until it is fixed or the repo is removed.
+The first iteration of this repo rebuilt Fedora's full `mariadb10.11`/`mariadb11.8` source packages with the patch, an Epoch bump to outrank distro updates, and daily version-tracking CI. It worked but rebuilt the entire server per Fedora release forever; the PATH-shadow design replaced it. See git history.

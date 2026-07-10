@@ -1,29 +1,23 @@
-name: track-fedora-mariadb
+name: build-mariadb-ctrlc
 on:
-  schedule:
-    - cron: '17 6 * * *'
+  push:
+    branches: [main]
+    paths:
+      - mariadb-ctrlc.spec
+      - mariadb-restore-ctrlc-exit.patch
+      - .github/workflows/rebuild.yml
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  rebuild:
+  build:
     runs-on: ubuntu-latest
     container: registry.fedoraproject.org/fedora:latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - releasever: "43"
-            chroots: fedora-43-x86_64 fedora-43-aarch64
-          - releasever: "44"
-            chroots: fedora-44-x86_64 fedora-44-aarch64
-          - releasever: "rawhide"
-            chroots: fedora-rawhide-x86_64 fedora-rawhide-aarch64
     steps:
       - name: Install tooling
-        run: dnf -y install git copr-cli rpm-build rpmdevtools dnf5-plugins jq
+        run: dnf -y install git copr-cli rpm-build rpmdevtools
 
       - uses: actions/checkout@v4
 
@@ -34,5 +28,18 @@ jobs:
           mkdir -p ~/.config
           printf '%s\n' "$COPR_CONFIG" > ~/.config/copr
 
-      - name: Check and rebuild for Fedora ${{ matrix.releasever }}
-        run: ./check-and-build.sh ${{ matrix.releasever }} ${{ matrix.chroots }}
+      - name: Build srpm
+        run: |
+          mkdir -p SOURCES out
+          cp mariadb-restore-ctrlc-exit.patch SOURCES/
+          spectool -g -C SOURCES mariadb-ctrlc.spec
+          rpmbuild --define "_topdir $PWD/rb" --define "_sourcedir $PWD/SOURCES" \
+                   --define "_srcrpmdir $PWD/out" -bs mariadb-ctrlc.spec
+
+      - name: Submit to COPR and wait
+        run: |
+          copr-cli build \
+            -r fedora-43-x86_64 -r fedora-43-aarch64 \
+            -r fedora-44-x86_64 -r fedora-44-aarch64 \
+            -r fedora-rawhide-x86_64 -r fedora-rawhide-aarch64 \
+            reversejames/mariadb-ctrlc-exit out/*.src.rpm
