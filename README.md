@@ -21,6 +21,10 @@ MariaDB 10.11.7 ([MDEV-14448](https://jira.mariadb.org/browse/MDEV-14448)) made 
 
 The client version is pinned in the spec and is independent of the server packages on the host; MySQL/MariaDB clients routinely talk to servers of other versions. Bump `Version:` in the spec and push to rebuild against a newer upstream.
 
+## Self-contained charsets
+
+The compiled-in default `character-sets-dir` is `/usr/local/share/mariadb-ctrlc/charsets`, populated from the same source tarball the client is built from (`-DINSTALL_MYSQLSHAREDIR=/usr/local/share/mariadb-ctrlc`). The upstream RPM-layout default would be `/usr/share/mysql/charsets`, which on Fedora belongs to Oracle MySQL's `mysql-common`: its MySQL 8.0 `Index.xml` still names charset ids 33/83 `utf8`, so a ≥10.6 MariaDB client parsing it warns twice at startup about its compiled-in `utf8mb3` collations. Bundling version-matched definitions keeps the client independent of whatever mysql/mariadb packages the host has — same principle as the rest of the package.
+
 ## Install
 
 ```sh
